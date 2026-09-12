@@ -1,0 +1,7 @@
+name = "microfeed"
+compatibility_date = "2024-09-01"
+pages_build_output_dir = "dist"
+
+[[kv_namespaces]]
+binding = "FEED_KV"
+id = "33d32768ae1b4c6294d6d7684228805e"

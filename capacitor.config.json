@@ -1,0 +1,12 @@
+{
+  "appId": "com.max.web",
+  "appName": "Signal",
+  "webDir": "dist",
+  "server": {
+    "url": "https://maxwrb.pages.dev/",
+    "cleartext": false
+  },
+  "android": {
+    "allowMixedContent": false
+  }
+}
