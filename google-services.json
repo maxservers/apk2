@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "437370589256",
+    "project_id": "maxweb114514",
+    "storage_bucket": "maxweb114514.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:437370589256:android:57d34813314205cd3c887d",
+        "android_client_info": {
+          "package_name": "com.max.web"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyB61HkRxg89ltNDkshNRRCwmcbP89YBGZI"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
