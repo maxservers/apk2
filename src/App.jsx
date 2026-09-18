@@ -2677,7 +2677,12 @@ export default function App() {
   }
 
   function loginWithGoogle() {
-    window.location.href = "/api/auth/google/start";
+    const isNativeApp =
+      window.location.origin === "https://localhost" ||
+      window.location.origin === "capacitor://localhost";
+    window.location.href = isNativeApp
+      ? "https://maxwrb.pages.dev/api/auth/google/start"
+      : "/api/auth/google/start";
   }
 
   async function logout() {

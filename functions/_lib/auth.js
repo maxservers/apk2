@@ -62,13 +62,16 @@ export function getCookie(request, name) {
 }
 
 export function makeSessionCookie(token, maxAgeSeconds) {
+  // SameSite=None（配合 Secure）是因为离线打包的 App 加载的是 https://localhost，
+  // 请求后端 API 时属于"跨站"请求，SameSite=Lax 会导致浏览器/WebView 不带上这个 Cookie。
+  // 网页版直接访问 maxwrb.pages.dev 时是同源请求，不受 SameSite=None 影响，行为不变。
   return `session=${encodeURIComponent(
     token
-  )}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=${maxAgeSeconds}`;
+  )}; HttpOnly; Secure; SameSite=None; Path=/; Max-Age=${maxAgeSeconds}`;
 }
 
 export function clearSessionCookie() {
-  return `session=; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=0`;
+  return `session=; HttpOnly; Secure; SameSite=None; Path=/; Max-Age=0`;
 }
 
 export function genCode() {

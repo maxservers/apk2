@@ -1,4 +1,4 @@
- // Push notification wiring for the Capacitor Android wrapper.
+// Push notification wiring for the Capacitor Android wrapper.
 // No-ops harmlessly when running as a plain website (no Capacitor native runtime).
 
 let initialized = false;
@@ -16,8 +16,13 @@ async function registerTokenWithServer(token, remove = false) {
   }
 }
 
+// 构建时由 GitHub Actions 注入：仓库根目录能找到 google-services.json 才会是
+// "true"，否则保持关闭，避免在 Firebase 没配置好的情况下调用原生推送接口导致崩溃。
+const PUSH_ENABLED = import.meta.env.VITE_PUSH_ENABLED === "true";
+
 export async function initPush() {
   if (initialized) return;
+  if (!PUSH_ENABLED) return; // Firebase 还没配置，先跳过
   if (typeof window === "undefined" || !window.Capacitor || !window.Capacitor.isNativePlatform()) {
     return; // Running in a normal browser tab — nothing to do.
   }
