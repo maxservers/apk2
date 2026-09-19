@@ -18,13 +18,32 @@
 
 ### 启用推送通知的步骤
 
+推送要真正送达，需要两把不同的"钥匙"，缺一不可：
+
+**第一把：`google-services.json`（让 Android App 能连上 Firebase）**
+
 1. 打开 [Firebase 控制台](https://console.firebase.google.com/)，登录后点"添加项目"，随便起个名字，一路创建完成（可以跳过 Google Analytics）。
 2. 进入项目后点 Android 图标，添加一个 Android 应用。**"Android 软件包名称"必须精确填 `com.max.web`**（跟 `capacitor.config.json` 里的 `appId` 一致）。
-3. 注册完成后下载 `google-services.json`，其余"添加 SDK""添加代码"的步骤直接跳过（不用照着它给的 Android Studio 代码手动改，构建流程已经处理好了）。
-4. 把下载的 `google-services.json` 放到项目**根目录**（跟 `package.json` 同一层，不要放进 `android` 文件夹——那个目录每次构建都会重新生成，放里面留不住）。
-5. `git add google-services.json && git commit -m "add firebase" && git push`
+3. 注册完成后下载 `google-services.json`，其余"添加 SDK""添加代码"的步骤直接跳过。
+4. 把文件放到项目**根目录**，文件名必须精确是 `google-services.json`（跟 `package.json` 同一层，不要放进 `android` 文件夹）。
 
-推上去之后 Actions 会自动检测到这个文件，接入 Android 工程、配好 `google-services` Gradle 插件，这次构建出的 APK 推送功能就是打开的。不需要这个文件也完全能正常使用 App，只是没有推送提醒。
+**第二把：服务账号密钥（让 Cloudflare 后端能真正调用 Firebase 发送这条推送）**
+
+1. 还是在 Firebase 控制台同一个项目里，左上角齿轮图标 → **项目设置** → 顶部选项卡切到 **服务账号（Service accounts）**。
+2. 点 **生成新的私钥（Generate new private key）**，下载一个 JSON 文件——这个跟 `google-services.json` 是完全不同的两个文件，内容包含 `private_key` 字段。
+3. 把下载的 JSON **内容整个复制**，覆盖粘贴进项目里的 `functions/_lib/fcm-service-account.json`（这个文件已经放了一个空的 `{}` 占位）。
+
+然后一起提交推送：
+
+```bash
+git add google-services.json functions/_lib/fcm-service-account.json
+git commit -m "接入 Firebase 推送"
+git push
+```
+
+⚠️ **这把服务账号密钥是能以你的身份调用 Firebase 接口的凭证，权限和敏感程度比 `google-services.json` 高得多**。如果这个仓库是 **public 仓库**，提交这个文件意味着任何人都能拿到它——建议在 Firebase 生成密钥时，如果能选角色，选范围最小的"Firebase Cloud Messaging API 管理员"而不是默认的 Owner/Editor，这样万一泄露，影响也只限于被人拿去发推送，不会波及你 Firebase 项目里的其他资源。如果之后想换成更安全的方式（不进 git，改存 Cloudflare 的环境变量密钥），告诉我一声，代码已经同时支持两种方式，只要在 Cloudflare Pages 后台配置一个叫 `FCM_SERVICE_ACCOUNT_JSON` 的环境变量（值是 JSON 内容），它的优先级比仓库里这个文件更高，不用改代码就能直接切换。
+
+推上去以后，Actions 那边会自动检测到根目录的 `google-services.json`，接入 Android 工程、配好 Gradle 插件；后端这边 `functions/_lib/fcm.js` 会自动读到 `fcm-service-account.json` 里的密钥，别人发消息/加好友/关注时就会真正推送过去了。
 
 ## 打包步骤（云端构建，不需要装 Android Studio）
 
@@ -62,4 +81,3 @@ git push origin v1.0.0
 
 - 名称、包名：改 `capacitor.config.json` 里的 `appName`、`appId`。
 - 图标 / 启动图：推荐用 [`@capacitor/assets`](https://github.com/ionic-team/capacitor-assets) 自动生成，需要的话可以帮你加进 Actions 流程。
-aa

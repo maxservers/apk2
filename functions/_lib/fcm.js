@@ -1,10 +1,27 @@
 // Firebase Cloud Messaging (HTTP v1) helper.
 //
-// Requires env.FCM_SERVICE_ACCOUNT_JSON — the full JSON contents of a Firebase
-// service account key (Firebase Console -> Project settings -> Service accounts
-// -> Generate new private key). Set it with:
-//   wrangler pages secret put FCM_SERVICE_ACCOUNT_JSON
-// (paste the whole JSON file content as the value)
+// 需要一份 Firebase 服务账号密钥（Firebase 控制台 -> 项目设置 -> 服务账号 ->
+// 生成新的私钥）。支持两种配置方式，按下面顺序优先取：
+//   1. Cloudflare Pages 环境变量 FCM_SERVICE_ACCOUNT_JSON（更安全，不进 git）
+//   2. 直接把下载的 JSON 内容整个覆盖粘贴进本文件同目录下的
+//      fcm-service-account.json 并提交进仓库（简单，但仓库能看到这个文件的人
+//      就能拿到这把密钥，公开仓库尤其要注意）
+
+import fcmServiceAccountFile from "./fcm-service-account.json";
+
+function resolveServiceAccount(env) {
+  if (env.FCM_SERVICE_ACCOUNT_JSON) {
+    try {
+      return JSON.parse(env.FCM_SERVICE_ACCOUNT_JSON);
+    } catch {
+      // fall through to the committed file
+    }
+  }
+  if (fcmServiceAccountFile && fcmServiceAccountFile.private_key) {
+    return fcmServiceAccountFile;
+  }
+  return null;
+}
 
 const encoder = new TextEncoder();
 
@@ -24,7 +41,7 @@ function pemToBinary(pem) {
   return bytes;
 }
 
-async function getAccessToken(env) {
+async function getAccessToken(env, sa) {
   const cacheKey = "fcm:access_token";
   if (env.FEED_KV) {
     const cached = await env.FEED_KV.get(cacheKey);
@@ -34,7 +51,6 @@ async function getAccessToken(env) {
     }
   }
 
-  const sa = JSON.parse(env.FCM_SERVICE_ACCOUNT_JSON);
   const now = Math.floor(Date.now() / 1000);
   const header = { alg: "RS256", typ: "JWT" };
   const claim = {
@@ -80,14 +96,14 @@ async function getAccessToken(env) {
 // Silently does nothing if FCM isn't configured or the user has no tokens.
 // Never throws — a push failure should never break the caller's main request.
 export async function sendPushToUser(env, uid, { title, body, data = {} }) {
-  if (!env.FCM_SERVICE_ACCOUNT_JSON || !env.FEED_KV) return;
+  const sa = resolveServiceAccount(env);
+  if (!sa || !env.FEED_KV) return;
   try {
     const raw = await env.FEED_KV.get(`push:${uid}`);
     const tokens = raw ? JSON.parse(raw) : [];
     if (!tokens.length) return;
 
-    const sa = JSON.parse(env.FCM_SERVICE_ACCOUNT_JSON);
-    const accessToken = await getAccessToken(env);
+    const accessToken = await getAccessToken(env, sa);
     const stringData = Object.fromEntries(Object.entries(data).map(([k, v]) => [k, String(v)]));
 
     const results = await Promise.allSettled(
