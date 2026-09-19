@@ -1,70 +1,47 @@
-# 把 Signal 论坛打包成 Android APK（离线打包静态资源版）
+# 把 Signal 论坛打包成 Android APK（在线加载 + Google 推送通知版）
 
-## 先说清楚："离线"能做到什么程度
+## 这一版是什么
 
-**这是一个前后端分离、数据存在 Cloudflare（KV）的论坛**：发帖、聊天、好友、登录这些功能全靠 `functions/api/*` 这些跑在 Cloudflare 上的接口。这部分**不可能塞进 APK 里离线运行**——没有网络的时候，帖子、聊天、登录这些功能本来就用不了，这跟用什么方式打包无关。
+- **网页套壳（在线加载模式）**：`capacitor.config.json` 里配置了 `server.url` 指向 `https://maxwrb.pages.dev/`，App 启动后直接加载这个线上地址。网站更新了 App 里立刻同步，不用重新打包发版；缺点是打开 App 需要联网。
+- **不用改后端**：因为 App 加载的就是真实域名，跟网页版访问是同源请求，不存在跨域问题，也不需要碰 `functions/_middleware.js`、Cookie 的 `SameSite` 这些——都保持原样。
+- **Google 推送通知**：接入 `@capacitor/push-notifications` + Firebase Cloud Messaging，配置好之后可以给登录用户推送消息通知。
 
-真正能做到"离线打包"的，是**前端界面本身**（HTML/CSS/JS）：
+## 修了一个 bug
 
-- **改之前**（`server.url` 指向线上地址）：App 每次打开都要从 `https://maxwrb.pages.dev` 下载页面外壳，再执行里面的 JS。
-- **改之后**（这次的版本）：页面外壳（`npm run build` 出来的 `dist/`）被直接打包进 APK，App 启动**不需要联网就能看到界面**；但一旦要发帖、登录、看消息，还是要连网调用 Cloudflare 上的接口——这部分永远需要网络。
+原压缩包里 `App.jsx`（核心组件，21万字节）被错放在项目根目录、文件名也变成了 `App (2).jsx`，而 `src/main.jsx` 是从 `src/App.jsx` 导入的——不修的话直接构建会报"找不到模块"。已经移动并改名为 `src/App.jsx`。
 
-如果这正是你想要的效果（离线也能秒开界面，只有实际数据交互需要联网），下面的改动就是为此做的。
+## 关于推送通知：默认是关闭的，需要你去 Firebase 配置一下
 
-## 这次具体改了什么
+原项目代码里已经写好了调用推送注册的逻辑（登录后会调用 `initPush()`），但从来没有配置过 Firebase。这个功能在 Android 上依赖 Firebase Cloud Messaging，如果没有配置 `google-services.json` 就调用，原生层会直接抛出未捕获异常，把整个 App 崩溃退出（登录后马上闪退）。
 
-打包方式变了之后，App 的运行环境从"加载 `https://maxwrb.pages.dev`"变成"加载本地文件，origin 是 `https://localhost`"——这会带来一连串连锁问题，已经一并处理：
+所以这版加了一个自动检测开关：**构建时如果发现仓库根目录有 `google-services.json`，就自动接入 Firebase 并打开推送；没有就自动跳过，不会崩溃，只是收不到推送**。
 
-| 问题 | 原因 | 处理方式 |
-|---|---|---|
-| `capacitor.config.json` | 之前配了 `server.url` 指向线上地址 | 删掉 `server` 字段，改为加载本地 `dist/` |
-| 所有 `fetch("/api/...")` 请求打不通 | App 现在的 origin 是 `https://localhost`，相对路径 `/api/xxx` 会指向 App 自己，而不是 Cloudflare 后端 | 在 `src/main.jsx` 里加了一段 fetch 补丁：检测到在打包 App 里运行时，自动把 `/api/...` 改写成 `https://maxwrb.pages.dev/api/...` |
-| 跨域请求被浏览器拦截（CORS） | 后端原本没做任何 CORS 处理，只允许同源请求 | 在 `functions/_middleware.js` 里给来自 App 固定 origin（`https://localhost`）的 `/api/*` 请求加上 `Access-Control-Allow-*` 响应头，并处理浏览器的 OPTIONS 预检请求 |
-| 登录后 Cookie 没法带上 | 登录 Session Cookie 原本是 `SameSite=Lax`，浏览器规定这种 Cookie 不会随"跨站"请求发送，而现在 App→后端已经是跨站了 | 把 `functions/_lib/auth.js` 里的 `SameSite=Lax` 改成 `SameSite=None`（配合已有的 `Secure`）。这个改动**只影响跨站请求，网页版直接访问 maxwrb.pages.dev 走同源请求，行为完全不变** |
-| App.jsx 找不到模块 | 原压缩包里 `App.jsx`（核心组件）被错放到项目根目录且改了名字 | 已挪回并改名为 `src/App.jsx` |
+### 启用推送通知的步骤
 
-⚠️ **有一处功能没有完全适配：Google 登录**。跳转到 Google 授权、授权完成后跳回来，这一整套是浏览器重定向流程，目前的处理是"离线包里点 Google 登录会跳去线上网页版完成登录"，能用，但会短暂离开原生外壳界面。如果需要做成不跳出 App 的深链接授权，需要额外接入 `@capacitor/browser` 或自定义 URL scheme，工作量不小，需要的话可以再单独做。
+1. 打开 [Firebase 控制台](https://console.firebase.google.com/)，登录后点"添加项目"，随便起个名字，一路创建完成（可以跳过 Google Analytics）。
+2. 进入项目后点 Android 图标，添加一个 Android 应用。**"Android 软件包名称"必须精确填 `com.max.web`**（跟 `capacitor.config.json` 里的 `appId` 一致）。
+3. 注册完成后下载 `google-services.json`，其余"添加 SDK""添加代码"的步骤直接跳过（不用照着它给的 Android Studio 代码手动改，构建流程已经处理好了）。
+4. 把下载的 `google-services.json` 放到项目**根目录**（跟 `package.json` 同一层，不要放进 `android` 文件夹——那个目录每次构建都会重新生成，放里面留不住）。
+5. `git add google-services.json && git commit -m "add firebase" && git push`
 
-## 已修复：登录后闪退
+推上去之后 Actions 会自动检测到这个文件，接入 Android 工程、配好 `google-services` Gradle 插件，这次构建出的 APK 推送功能就是打开的。不需要这个文件也完全能正常使用 App，只是没有推送提醒。
 
-登录成功、以及每次打开 App 时检测到已登录状态，代码里都会调用 `initPush()` 尝试注册推送通知。这个功能（`@capacitor/push-notifications`）在 Android 上依赖 **Firebase Cloud Messaging**，需要项目里有 `android/app/google-services.json` 并在 Gradle 里接入 `google-services` 插件，Firebase 才能正常初始化。这个仓库一直没有配置这些，所以一调用 `PushNotifications.register()`，原生层就会因为 Firebase 未初始化抛出异常，且这个异常不会被 JS 的 `try/catch` 接住，直接把整个 App 干崩溃——这就是"一登录就闪退"的原因。
+## 打包步骤（云端构建，不需要装 Android Studio）
 
-**当前处理**：`src/push.js` 里的 `initPush()` 现在由一个开关 `PUSH_ENABLED` 控制，这个开关在构建时由 GitHub Actions 自动注入——**只有当仓库根目录能找到 `google-services.json` 时才会打开**，否则保持关闭。也就是说现在不用你手动改代码，登录、发帖、聊天等核心功能不受影响，暂时只是收不到推送提醒。
-
-**想要真正启用推送通知**，需要：
-
-1. 去 [Firebase 控制台](https://console.firebase.google.com/) 新建一个项目，添加一个 Android 应用，包名填 `com.max.web`（跟 `capacitor.config.json` 里的 `appId` 一致）
-2. 下载生成的 `google-services.json`，放到项目**根目录**（跟 `package.json` 同一层，不要放进 `android` 文件夹，那个目录每次构建都会重新生成）
-3. `git add google-services.json && git commit && git push`
-
-推送后 Actions 会自动检测到这个文件，把它接入 Android 工程、配置好 `google-services` Gradle 插件，并且在这次构建里把推送功能打开——不需要再额外改代码或找我。
-
-## 打包步骤（和之前一样，云端构建）
-
-### 1. 把代码推到 GitHub
+### 1. 推到 GitHub
 
 ```bash
 git init
 git add .
-git commit -m "init: Signal 论坛，离线打包静态资源版"
+git commit -m "init: Signal 论坛，在线套壳 + 推送通知"
 git branch -M main
 git remote add origin https://github.com/<你的用户名>/<仓库名>.git
 git push -u origin main
 ```
 
-> 注意：这次改动里 `functions/_middleware.js` 和 `functions/_lib/auth.js` 是**后端代码**。如果你的 Cloudflare Pages 项目是通过这个 GitHub 仓库自动部署的，推送后它会自动重新部署，CORS 和 Cookie 的修改才会在线上生效——APK 里的 App 才能正常登录/发帖。如果你的 CF Pages 项目不是接的这个仓库，需要手动把这两个文件的改动同步过去并重新部署一次。
+### 2. Actions 自动构建
 
-### 2. Actions 自动构建 APK
-
-推送后 GitHub Actions（`.github/workflows/build-apk.yml`）会自动：
-
-1. `npm install`
-2. `npm run build`（把最新前端打进 `dist/`）
-3. `npx cap add android`（首次）+ `npx cap sync android`（把 `dist/` 同步进原生工程）
-4. `./gradlew assembleDebug` 编译出 `app-debug.apk`
-5. 作为 Artifact 上传
-
-也可以在仓库的 **Actions** 页手动点 **Run workflow** 触发。
+推送后 `.github/workflows/build-apk.yml` 会自动跑：`npm install` → `npm run build` → 检测 Firebase 配置 → `npx cap add/sync android` → （有 Firebase 配置的话）接入 Firebase → `./gradlew assembleDebug` → 上传 APK。也可以在仓库 **Actions** 页手动点 **Run workflow**。
 
 ### 3. 下载安装
 
@@ -77,15 +54,11 @@ git tag v1.0.0
 git push origin v1.0.0
 ```
 
-## 以后每次改了网页内容，App 要不要重新打包？
-
-**需要**。因为界面现在是打进 APK 里的静态文件，不是实时从网上加载的。改了前端代码后，重新走一遍上面的推送流程，Actions 会重新编译出新的 APK。如果你更看重"改完网页立刻生效、不用重新发 APK"，可以告诉我改回"在线加载模式"（也就是恢复 `capacitor.config.json` 里的 `server.url`）。
-
 ## 关于签名 / 上架 Google Play
 
-现在是 **未签名 Debug APK**，可以直接装机测试，不能传 Google Play。要上架需要生成正式签名密钥、存进仓库 Secrets，并把工作流里的 `assembleDebug` 换成 `assembleRelease`，需要的话我可以帮你补上这部分。
+现在生成的是 **Debug 版 APK**，未签名，只能直接安装测试，不能上传 Google Play。要上架的话需要生成正式签名密钥、存进仓库 Secrets，并把工作流里的 `assembleDebug` 换成 `assembleRelease`，需要的话可以再帮你补上。
 
 ## 想改 App 名称 / 图标 / 包名
 
-- 名称、包名：改 `capacitor.config.json` 里的 `appName`、`appId`（改包名后如果 `android/` 已生成过，需删除后重新 `npx cap add android`）。
+- 名称、包名：改 `capacitor.config.json` 里的 `appName`、`appId`。
 - 图标 / 启动图：推荐用 [`@capacitor/assets`](https://github.com/ionic-team/capacitor-assets) 自动生成，需要的话可以帮你加进 Actions 流程。

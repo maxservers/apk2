@@ -1,4 +1,4 @@
-// Push notification wiring for the Capacitor Android wrapper.
+ // Push notification wiring for the Capacitor Android wrapper.
 // No-ops harmlessly when running as a plain website (no Capacitor native runtime).
 
 let initialized = false;
@@ -17,7 +17,9 @@ async function registerTokenWithServer(token, remove = false) {
 }
 
 // 构建时由 GitHub Actions 注入：仓库根目录能找到 google-services.json 才会是
-// "true"，否则保持关闭，避免在 Firebase 没配置好的情况下调用原生推送接口导致崩溃。
+// "true"，否则保持关闭——@capacitor/push-notifications 在 Android 上依赖
+// Firebase Cloud Messaging，没配置好就调用 register() 会导致原生层抛出未捕获
+// 异常、把整个 App 崩溃退出。这个开关保证没配 Firebase 时也能正常登录使用。
 const PUSH_ENABLED = import.meta.env.VITE_PUSH_ENABLED === "true";
 
 export async function initPush() {

@@ -1,54 +1,10 @@
 // 全站密码门：在 Cloudflare Pages 后台 Settings -> Environment variables
 // 添加一个变量 SITE_PASSWORD，值就是你想设置的访问密码。
 // 没有配置这个变量时，中间件会直接放行（不会把自己也锁在外面）。
-//
-// CORS 支持：离线打包的 Android App 运行在 https://localhost（跟
-// maxwrb.pages.dev 不同源），调用 /api/* 接口时浏览器/WebView 会先发一次
-// OPTIONS 预检请求，并且要求响应带 Access-Control-Allow-* 头才会放行。
-// 这里只对来自打包 App 的固定 origin 放开跨域，不影响网页版本身的同源请求。
-
-const ALLOWED_CORS_ORIGINS = new Set([
-  "https://localhost", // Capacitor Android 默认使用的 origin（离线打包 App）
-  "capacitor://localhost", // 部分平台/旧版本会用这个 scheme
-]);
-
-function corsHeadersFor(origin) {
-  return {
-    "Access-Control-Allow-Origin": origin,
-    "Access-Control-Allow-Credentials": "true",
-    "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type, Authorization",
-    "Vary": "Origin",
-  };
-}
 
 export async function onRequest(context) {
-  const { request } = context;
-  const url = new URL(request.url);
-  const origin = request.headers.get("Origin") || "";
-  const isApiPath = url.pathname.startsWith("/api/");
-  const isAllowedCorsOrigin = ALLOWED_CORS_ORIGINS.has(origin);
-
-  // 跨域预检请求，直接短路返回，不走密码门逻辑
-  if (isApiPath && isAllowedCorsOrigin && request.method === "OPTIONS") {
-    return new Response(null, { status: 204, headers: corsHeadersFor(origin) });
-  }
-
-  const response = await handleRequest(context, url);
-
-  // 给 API 的正式响应也补上 CORS 头，否则打包 App 里读不到返回内容
-  if (isApiPath && isAllowedCorsOrigin) {
-    const headers = new Headers(response.headers);
-    const extra = corsHeadersFor(origin);
-    for (const k in extra) headers.set(k, extra[k]);
-    return new Response(response.body, { status: response.status, headers });
-  }
-
-  return response;
-}
-
-async function handleRequest(context, url) {
   const { request, next, env } = context;
+  const url = new URL(request.url);
 
   const SITE_PASSWORD = env.SITE_PASSWORD || "";
   if (!SITE_PASSWORD) {
