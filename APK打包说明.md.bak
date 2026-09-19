@@ -62,4 +62,3 @@ git push origin v1.0.0
 
 - 名称、包名：改 `capacitor.config.json` 里的 `appName`、`appId`。
 - 图标 / 启动图：推荐用 [`@capacitor/assets`](https://github.com/ionic-team/capacitor-assets) 自动生成，需要的话可以帮你加进 Actions 流程。
-aa
